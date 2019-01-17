@@ -47,7 +47,10 @@ const logSuccess = ({ id }) => {
  * @param {String} importer the command being executed
  * @param {Object} argv arguments from yargs
  */
-const execute = (importer, { file, strategy: strategyName, concurrency }) => {
+const execute = (
+  importer,
+  { file, strategy: strategyName, concurrency, validate }
+) => {
   let modulePath;
   try {
     modulePath = resolve.sync(`./strategies/${strategyName}/${importer}`, {
@@ -67,6 +70,9 @@ const execute = (importer, { file, strategy: strategyName, concurrency }) => {
   // Create the pipes we'll use to parse the data.
   const parsePipe = get(strategy, 'parse', parseJSONStream);
 
+  // Create a pipe to run data validation first
+  const validatePipe = get(strategy, 'validate');
+
   // Create the pipe we'll use to translate the data to the saving format.
   const translatePipe = get(strategy, 'translate');
   if (!translatePipe) {
@@ -78,17 +84,34 @@ const execute = (importer, { file, strategy: strategyName, concurrency }) => {
   // Select the correct saving method based on the command used.
   const savePipe = save[importer];
 
-  return h
-    .of(file)
-    .flatMap(readPipe)
-    .pipe(parsePipe)
-    .map(translatePipe)
-    .parallel(concurrency)
-    .map(savePipe)
-    .parallel(concurrency)
-    .errors(logError)
-    .each(logSuccess)
-    .done(process.exit);
+  if (validate) {
+    if (!validatePipe) {
+      throw new Error(
+        `validation not available for the ${strategyName} ${importer} strategy`
+      );
+    }
+    return h
+      .of(file)
+      .flatMap(readPipe)
+      .pipe(parsePipe)
+      .map(validatePipe)
+      .parallel(concurrency)
+      .errors(logError)
+      .each(logSuccess)
+      .done(process.exit);
+  } else {
+    return h
+      .of(file)
+      .flatMap(readPipe)
+      .pipe(parsePipe)
+      .map(translatePipe)
+      .parallel(concurrency)
+      .map(savePipe)
+      .parallel(concurrency)
+      .errors(logError)
+      .each(logSuccess)
+      .done(process.exit);
+  }
 };
 
 /**
@@ -104,6 +127,11 @@ yargs
     alias: 'c',
     describe: 'Concurrency of the importer',
     default: 10,
+  })
+  .option('validate', {
+    alias: 'v',
+    describe: 'Validate source data without importing',
+    default: false,
   })
   .demandOption(
     ['strategy'],

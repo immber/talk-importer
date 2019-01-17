@@ -15,4 +15,11 @@ module.exports = {
     };
     return h([asset]);
   },
+
+  validate: fyre => {
+    //just logs the url to STDOUT so we can upated permitted domains list
+    //TODO: Add validation that source data contains expected data points
+    console.log(fyre.source);
+    return h([fyre]);
+  },
 };
